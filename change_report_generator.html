@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Change Report Generator — rain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0A0F1A;
+    --surface:   #111827;
+    --border:    #1E2D40;
+    --teal:      #02C39A;
+    --teal-dim:  #028090;
+    --amber:     #F59E0B;
+    --text:      #E2E8F0;
+    --muted:     #64748B;
+    --danger:    #EF4444;
+    --radius:    12px;
+    --font-mono: 'DM Mono', monospace;
+    --font-sans: 'DM Sans', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ── grid noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 40px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { font-family: var(--font-mono); font-size: 18px; font-weight: 500; color: var(--teal); letter-spacing: -0.5px; }
+  .logo span { color: var(--muted); font-weight: 400; }
+  .badge {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    padding: 4px 10px; border: 1px solid var(--teal-dim);
+    color: var(--teal); border-radius: 4px; letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* ── main ── */
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; }
+
+  .hero { text-align: center; margin-bottom: 48px; }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 42px); font-weight: 300; letter-spacing: -1.5px;
+    color: var(--text); line-height: 1.15; margin-bottom: 14px;
+  }
+  .hero h1 strong { font-weight: 600; color: var(--teal); }
+  .hero p { color: var(--muted); font-size: 15px; max-width: 440px; margin: 0 auto; }
+
+  /* ── drop zone ── */
+  .drop-zone {
+    width: 100%; max-width: 560px;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 52px 32px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    cursor: pointer; transition: border-color .2s, background .2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--teal-dim);
+    background: #0D1E2E;
+  }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  .drop-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: linear-gradient(135deg, #0D2A35 0%, #0D1E2E 100%);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; transition: transform .2s;
+  }
+  .drop-zone:hover .drop-icon { transform: translateY(-3px); }
+
+  .drop-label { font-size: 15px; color: var(--text); font-weight: 500; }
+  .drop-sub   { font-size: 13px; color: var(--muted); font-family: var(--font-mono); }
+
+  /* ── api key section ── */
+  .api-section {
+    width: 100%; max-width: 560px; margin-top: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .api-label-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .api-section label {
+    font-size: 12px; font-family: var(--font-mono); color: var(--muted);
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .api-help-toggle {
+    font-size: 12px; color: var(--teal-dim); background: none; border: none;
+    cursor: pointer; font-family: var(--font-mono); padding: 0;
+    transition: color .15s; text-decoration: underline; text-underline-offset: 3px;
+  }
+  .api-help-toggle:hover { color: var(--teal); }
+
+  .api-row { display: flex; gap: 8px; align-items: center; }
+  .api-input-wrap { flex: 1; position: relative; }
+  .api-section input {
+    width: 100%; background: var(--surface); border: 1.5px solid var(--border);
+    color: var(--text); font-family: var(--font-mono); font-size: 13px;
+    padding: 10px 40px 10px 14px; border-radius: 8px; outline: none; transition: border-color .2s;
+  }
+  .api-section input:focus { border-color: var(--teal-dim); }
+  .api-section input::placeholder { color: var(--muted); }
+  .api-section input.valid   { border-color: #065F46; }
+  .api-section input.invalid { border-color: #7F1D1D; }
+
+  .btn-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 2px; transition: color .15s;
+  }
+  .btn-eye:hover { color: var(--text); }
+
+  .api-remember {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted); cursor: pointer; user-select: none;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .api-remember input[type=checkbox] { accent-color: var(--teal); width: 14px; height: 14px; cursor: pointer; }
+
+  /* ── api help panel ── */
+  .api-help {
+    display: none; background: #0B1929; border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px; margin-top: 4px;
+  }
+  .api-help.open { display: block; }
+  .api-help h4 {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    margin-bottom: 14px; font-family: var(--font-sans);
+  }
+  .api-steps { display: flex; flex-direction: column; gap: 10px; }
+  .api-step { display: flex; gap: 12px; align-items: flex-start; }
+  .api-step-num {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--teal-dim); color: #0A0F1A;
+    font-size: 11px; font-weight: 700; font-family: var(--font-mono);
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+  }
+  .api-step-body { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+  .api-step-body strong { color: var(--text); font-weight: 500; }
+  .api-step-body a { color: var(--teal); text-decoration: none; }
+  .api-step-body a:hover { text-decoration: underline; }
+  .api-step-body code {
+    font-family: var(--font-mono); font-size: 11.5px;
+    background: #0D1E2E; padding: 1px 6px; border-radius: 4px; color: var(--teal);
+  }
+  .api-security-note {
+    margin-top: 14px; padding: 10px 14px;
+    background: #1A1206; border: 1px solid #3D2A06; border-radius: 8px;
+    font-size: 12px; color: #A07020; line-height: 1.5;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .api-security-note .note-icon { flex-shrink: 0; font-size: 14px; }
+
+  /* ── file chosen state ── */
+  .file-chosen {
+    display: none; width: 100%; max-width: 560px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px;
+    align-items: center; gap: 14px;
+  }
+  .file-chosen.visible { display: flex; }
+  .file-icon { font-size: 24px; flex-shrink: 0; }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-size { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+  .file-clear {
+    background: none; border: none; color: var(--muted); font-size: 18px;
+    cursor: pointer; padding: 4px; line-height: 1; transition: color .15s;
+  }
+  .file-clear:hover { color: var(--danger); }
+
+  /* ── generate button ── */
+  .btn-generate {
+    width: 100%; max-width: 560px; margin-top: 16px;
+    padding: 15px 24px; border: none; border-radius: 10px;
+    background: var(--teal); color: #0A0F1A;
+    font-family: var(--font-sans); font-size: 15px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: opacity .2s, transform .15s;
+  }
+  .btn-generate:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+  .btn-generate:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── progress ── */
+  .progress-wrap { width: 100%; max-width: 560px; margin-top: 16px; display: none; flex-direction: column; gap: 12px; }
+  .progress-wrap.visible { display: flex; }
+
+  .progress-bar-bg {
+    height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; background: var(--teal); border-radius: 2px;
+    width: 0%; transition: width .4s ease;
+  }
+
+  .progress-steps { display: flex; flex-direction: column; gap: 6px; }
+  .step {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; font-family: var(--font-mono); color: var(--muted);
+    transition: color .3s;
+  }
+  .step.active   { color: var(--text); }
+  .step.done     { color: var(--teal); }
+  .step.error    { color: var(--danger); }
+  .step-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .step.active .step-dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── success / error ── */
+  .result-card {
+    display: none; width: 100%; max-width: 560px; margin-top: 20px;
+    border-radius: var(--radius); padding: 20px 24px;
+    align-items: flex-start; gap: 14px;
+  }
+  .result-card.success { display: flex; background: #0D2A1F; border: 1.5px solid #065F46; }
+  .result-card.error   { display: flex; background: #2A0D0D; border: 1.5px solid #7F1D1D; }
+  .result-icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
+  .result-body h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .result-body p  { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .result-card.success h3 { color: var(--teal); }
+  .result-card.error   h3 { color: var(--danger); }
+
+  .btn-download {
+    margin-top: 12px; padding: 9px 18px; border-radius: 8px;
+    background: var(--teal); color: #0A0F1A; font-weight: 600;
+    font-size: 13px; font-family: var(--font-sans);
+    border: none; cursor: pointer; transition: opacity .2s;
+  }
+  .btn-download:hover { opacity: 0.85; }
+
+  /* ── format info ── */
+  .format-info {
+    width: 100%; max-width: 560px; margin-top: 32px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  }
+  .format-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+  }
+  .format-card-num { font-family: var(--font-mono); font-size: 22px; font-weight: 500; color: var(--teal); margin-bottom: 4px; }
+  .format-card-label { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+  footer { text-align: center; padding: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">rain<span>// change report</span></div>
+    <div class="badge">3×3 Grid Format</div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>PDF → <strong>PowerPoint</strong><br>in seconds</h1>
+      <p>Drop your monthly Change Management Report PDF and get a formatted 3×3 grid deck instantly.</p>
+    </div>
+
+    <!-- API Key -->
+    <div class="api-section">
+      <div class="api-label-row">
+        <label>Anthropic API Key</label>
+        <button class="api-help-toggle" id="apiHelpToggle">⚙ First time? Get your key</button>
+      </div>
+
+      <!-- Help panel -->
+      <div class="api-help" id="apiHelp">
+        <h4>How to get your API key (∼2 minutes)</h4>
+        <div class="api-steps">
+          <div class="api-step">
+            <div class="api-step-num">1</div>
+            <div class="api-step-body">Go to <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> and sign up for a free account using your work email.</div>
+          </div>
+          <div class="api-step">
+            <div class="api-step-num">2</div>
+            <div class="api-step-body">Once logged in, click <strong>API Keys</strong> in the left sidebar, then click <strong>Create Key</strong>.</div>
+          </div>
+          <div class="api-step">
+            <div class="api-step-num">3</div>
+            <div class="api-step-body">Give it a name like <code>change-report-tool</code>, then click <strong>Create Key</strong>.</div>
+          </div>
+          <div class="api-step">
+            <div class="api-step-num">4</div>
+            <div class="api-step-body">Copy the key — it starts with <code>sk-ant-…</code> — and paste it below. <strong>You only see it once</strong>, so copy it before closing that screen.</div>
+          </div>
+          <div class="api-step">
+            <div class="api-step-num">5</div>
+            <div class="api-step-body">Add a small credit balance (~$5) under <strong>Billing</strong>. One report costs roughly <strong>$0.10–$0.20</strong>.</div>
+          </div>
+        </div>
+        <div class="api-security-note">
+          <span class="note-icon">🔒</span>
+          <span><strong style="color:#C49030">Keep your key private.</strong> Never share it or paste it into emails. Each person on the team should create their own free key — this keeps your account secure and tracks usage per person.</span>
+        </div>
+      </div>
+
+      <div class="api-row">
+        <div class="api-input-wrap">
+          <input type="password" id="apiKey" placeholder="Paste your sk-ant-… key here" autocomplete="off" spellcheck="false">
+          <button class="btn-eye" id="btnEye" title="Show/hide key">👁</button>
+        </div>
+        <label class="api-remember">
+          <input type="checkbox" id="rememberKey"> Remember for session
+        </label>
+      </div>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".pdf">
+      <div class="drop-icon">📄</div>
+      <div class="drop-label">Drop your PDF here</div>
+      <div class="drop-sub">or click to browse</div>
+    </div>
+
+    <!-- File chosen -->
+    <div class="file-chosen" id="fileChosen">
+      <div class="file-icon">📋</div>
+      <div class="file-info">
+        <div class="file-name" id="fileName">—</div>
+        <div class="file-size" id="fileSize">—</div>
+      </div>
+      <button class="file-clear" id="fileClear" title="Remove">✕</button>
+    </div>
+
+    <!-- Generate -->
+    <button class="btn-generate" id="btnGenerate" disabled>
+      <span id="btnLabel">⚡ Generate Presentation</span>
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-steps" id="progressSteps"></div>
+    </div>
+
+    <!-- Result -->
+    <div class="result-card" id="resultCard">
+      <div class="result-icon" id="resultIcon"></div>
+      <div class="result-body">
+        <h3 id="resultTitle"></h3>
+        <p id="resultMsg"></p>
+        <button class="btn-download" id="btnDownload" style="display:none">⬇ Download PPTX</button>
+      </div>
+    </div>
+
+    <!-- Format info -->
+    <div class="format-info">
+      <div class="format-card">
+        <div class="format-card-num">3×3</div>
+        <div class="format-card-label">Cards per slide — maximises information density</div>
+      </div>
+      <div class="format-card">
+        <div class="format-card-num">9</div>
+        <div class="format-card-label">Category colour themes with section dividers</div>
+      </div>
+      <div class="format-card">
+        <div class="format-card-num">~38</div>
+        <div class="format-card-label">Slides for a 200-change report (varies by size)</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>change-report-generator · rain internal tool · powered by claude</footer>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let selectedFile = null;
+let pptxBlob     = null;
+let pptxFilename = 'change_management_report.pptx';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI refs
+// ─────────────────────────────────────────────────────────────────────────────
+const dropZone     = document.getElementById('dropZone');
+const fileInput    = document.getElementById('fileInput');
+const fileChosen   = document.getElementById('fileChosen');
+const fileName     = document.getElementById('fileName');
+const fileSize     = document.getElementById('fileSize');
+const fileClear    = document.getElementById('fileClear');
+const btnGenerate  = document.getElementById('btnGenerate');
+const btnLabel     = document.getElementById('btnLabel');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressSteps= document.getElementById('progressSteps');
+const resultCard   = document.getElementById('resultCard');
+const resultIcon   = document.getElementById('resultIcon');
+const resultTitle  = document.getElementById('resultTitle');
+const resultMsg    = document.getElementById('resultMsg');
+const btnDownload  = document.getElementById('btnDownload');
+const apiKeyInput  = document.getElementById('apiKey');
+const apiHelpToggle= document.getElementById('apiHelpToggle');
+const apiHelp      = document.getElementById('apiHelp');
+const btnEye       = document.getElementById('btnEye');
+const rememberKey  = document.getElementById('rememberKey');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API key helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Restore key from sessionStorage if previously remembered
+const savedKey = sessionStorage.getItem('rain_api_key');
+if (savedKey) { apiKeyInput.value = savedKey; rememberKey.checked = true; validateKeyUI(); }
+
+// Toggle help panel
+apiHelpToggle.addEventListener('click', () => {
+  const open = apiHelp.classList.toggle('open');
+  apiHelpToggle.textContent = open ? '✕ Close instructions' : '⚙ First time? Get your key';
+});
+
+// Show / hide key
+btnEye.addEventListener('click', () => {
+  const isPassword = apiKeyInput.type === 'password';
+  apiKeyInput.type = isPassword ? 'text' : 'password';
+  btnEye.textContent = isPassword ? '🙈' : '👁';
+});
+
+// Validate key format live and update border colour
+function validateKeyUI() {
+  const val = apiKeyInput.value.trim();
+  apiKeyInput.classList.remove('valid', 'invalid');
+  if (val.length > 6) {
+    apiKeyInput.classList.add(val.startsWith('sk-ant') ? 'valid' : 'invalid');
+  }
+  if (rememberKey.checked && val) sessionStorage.setItem('rain_api_key', val);
+  else if (!rememberKey.checked) sessionStorage.removeItem('rain_api_key');
+  updateBtn();
+}
+
+apiKeyInput.addEventListener('input', validateKeyUI);
+rememberKey.addEventListener('change', validateKeyUI);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File handling
+// ─────────────────────────────────────────────────────────────────────────────
+function setFile(file) {
+  if (!file || file.type !== 'application/pdf') { alert('Please select a PDF file.'); return; }
+  selectedFile = file;
+  fileName.textContent = file.name;
+  fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
+  dropZone.style.display  = 'none';
+  fileChosen.classList.add('visible');
+  updateBtn();
+}
+
+function clearFile() {
+  selectedFile = null;
+  fileInput.value = '';
+  dropZone.style.display = '';
+  fileChosen.classList.remove('visible');
+  updateBtn();
+}
+
+function updateBtn() {
+  btnGenerate.disabled = !(selectedFile && apiKeyInput.value.trim().startsWith('sk-ant'));
+}
+
+fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+fileClear.addEventListener('click', clearFile);
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Progress helpers
+// ─────────────────────────────────────────────────────────────────────────────
+const STEPS = [
+  'Reading PDF…',
+  'Extracting changes with Claude…',
+  'Parsing categories…',
+  'Building slides…',
+  'Finalising presentation…'
+];
+
+function initProgress() {
+  progressWrap.classList.add('visible');
+  progressFill.style.width = '0%';
+  progressSteps.innerHTML = STEPS.map((s,i) =>
+    `<div class="step" id="step-${i}"><div class="step-dot"></div>${s}</div>`
+  ).join('');
+  resultCard.className = 'result-card';
+  btnDownload.style.display = 'none';
+  pptxBlob = null;
+}
+
+function setStep(idx) {
+  STEPS.forEach((_,i) => {
+    const el = document.getElementById(`step-${i}`);
+    if (i < idx)  el.className = 'step done';
+    else if (i === idx) el.className = 'step active';
+    else el.className = 'step';
+  });
+  progressFill.style.width = Math.round((idx / (STEPS.length)) * 100) + '%';
+}
+
+function finishProgress() { progressFill.style.width = '100%'; }
+
+function showResult(ok, title, msg) {
+  resultCard.className = `result-card ${ok ? 'success' : 'error'}`;
+  resultIcon.textContent = ok ? '✅' : '❌';
+  resultTitle.textContent = title;
+  resultMsg.textContent   = msg;
+  if (ok) btnDownload.style.display = 'inline-block';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF → base64
+// ─────────────────────────────────────────────────────────────────────────────
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(',')[1]);
+    r.onerror = () => rej(new Error('Failed to read file'));
+    r.readAsDataURL(file);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Claude API call
+// ─────────────────────────────────────────────────────────────────────────────
+async function extractChangesFromPDF(base64Data, apiKey) {
+  const systemPrompt = `You are a structured data extractor. The user will provide a Change Management Report PDF.
+Extract ALL changes from the document and return a JSON object ONLY — no preamble, no markdown fences, no explanation.
+
+The JSON must follow this exact schema:
+{
+  "reportTitle": "Change Management Report",
+  "period": "Month Year",
+  "generatedDate": "DD/MM/YYYY",
+  "totalChanges": 200,
+  "categories": [
+    {
+      "name": "Category Name",
+      "count": 5,
+      "changes": [
+        {
+          "title": "Change title",
+          "type": "Standard change | Work Order | Emergency change | Retrospective change | CAB change",
+          "date": "DD/MM/YYYY",
+          "summary": "1-2 sentence plain English explanation of what was done and why it matters."
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Include EVERY single change — do not skip or summarise multiple changes into one.
+- Keep summaries concise (1-2 sentences max, ~25 words).
+- category "count" must equal the number of items in its "changes" array.
+- "totalChanges" must equal the sum of all category counts.
+- Return ONLY valid JSON. No markdown, no explanation.`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-6',
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
+        }, {
+          type: 'text',
+          text: 'Extract all changes from this Change Management Report PDF and return the JSON as specified.'
+        }]
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
+
+  const data = await response.json();
+  const raw  = data.content.find(b => b.type === 'text')?.text || '';
+  const clean = raw.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PPTX generation (3×3 grid — exact same format as refined)
+// ─────────────────────────────────────────────────────────────────────────────
+const PALETTE = {
+  DARK:     '0D1B2A', TEAL:  '028090', TEAL_LT: '02C39A',
+  WHITE:    'FFFFFF',  LIGHT_BG: 'F0F4F8', MUTED: '64748B'
+};
+
+const CAT_COLORS = [
+  '10B981','EF4444','8B5CF6','F59E0B','3B82F6',
+  'EC4899','6366F1','14B8A6','F97316','06B6D4',
+  'A855F7','84CC16','F43F5E','0EA5E9','D97706'
+];
+
+const HEADER_H  = 0.60;
+const PAD_X     = 0.20;
+const PAD_Y_TOP = 0.08;
+const GAP_X     = 0.10;
+const GAP_Y     = 0.09;
+const CARD_W    = (10 - PAD_X * 2 - GAP_X * 2) / 3;
+const CARD_H    = (5.625 - HEADER_H - PAD_Y_TOP - 0.08 - GAP_Y * 2) / 3;
+const MAX_TITLE = 72;
+
+function cardX(col) { return PAD_X + col * (CARD_W + GAP_X); }
+function cardY(row) { return HEADER_H + PAD_Y_TOP + row * (CARD_H + GAP_Y); }
+const mkShadow = () => ({ type:'outer', color:'000000', blur:5, offset:2, angle:135, opacity:0.10 });
+
+function addHeaderBar(pres, slide, catName, countLabel, color) {
+  const D = PALETTE;
+  slide.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:10, h:HEADER_H, fill:{color:D.DARK}, line:{color:D.DARK} });
+  slide.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:0.18, h:HEADER_H, fill:{color}, line:{color} });
+  slide.addText(catName,   { x:0.32, y:0, w:7.5, h:HEADER_H, fontSize:16, bold:true, color:D.WHITE, fontFace:'Calibri', valign:'middle', margin:0 });
+  slide.addText(countLabel,{ x:0.32, y:0, w:9.4, h:HEADER_H, fontSize:11, color, align:'right', fontFace:'Calibri', valign:'middle', margin:0 });
+}
+
+function addCard(pres, slide, change, col, row, color) {
+  const x = cardX(col), y = cardY(row), w = CARD_W, h = CARD_H, pad = 0.10;
+  const D = PALETTE;
+  const title = change.title.length > MAX_TITLE ? change.title.slice(0, MAX_TITLE-1) + '…' : change.title;
+
+  slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h, fill:{color:D.WHITE}, shadow:mkShadow() });
+  slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h:0.05, fill:{color}, line:{color} });
+
+  slide.addText(title, { x:x+pad, y:y+0.07, w:w-pad-0.92, h:0.38, fontSize:8, bold:true, color:D.DARK, fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
+
+  const bw=0.82, bh=0.20;
+  slide.addShape(pres.shapes.RECTANGLE, { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fill:{color, transparency:82}, line:{color, width:0.5} });
+  slide.addText(change.type || 'Change', { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fontSize:6, bold:true, color, align:'center', valign:'middle', fontFace:'Calibri', margin:0 });
+
+  slide.addText(change.date || '', { x:x+pad, y:y+0.48, w:w-pad*2, h:0.17, fontSize:7.5, color:D.MUTED, fontFace:'Calibri', margin:0 });
+  slide.addShape(pres.shapes.LINE, { x:x+pad, y:y+0.67, w:w-pad*2, h:0, line:{color:'E2E8F0', width:0.5} });
+  slide.addText(change.summary || '', { x:x+pad, y:y+0.71, w:w-pad*2, h:h-0.71-0.05, fontSize:7.5, color:'374151', fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
+}
+
+async function buildPPTX(reportData) {
+  const pres = new PptxGenJS();
+  pres.layout = 'LAYOUT_16x9';
+  pres.title  = reportData.reportTitle || 'Change Management Report';
+  const D = PALETTE;
+
+  // ── Title slide ──
+  let s = pres.addSlide();
+  s.background = { color: D.DARK };
+  s.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:0.28, h:5.625, fill:{color:D.TEAL}, line:{color:D.TEAL} });
+  s.addShape(pres.shapes.OVAL,      { x:7.2, y:-0.8, w:5, h:5, fill:{color:D.TEAL, transparency:88}, line:{color:D.TEAL, transparency:88} });
+  s.addText('rain', { x:0.55, y:0.55, w:2, h:0.45, fontSize:20, bold:true, color:D.TEAL_LT, fontFace:'Calibri', margin:0 });
+  s.addText(reportData.reportTitle || 'Change Management Report', { x:0.55, y:1.2, w:8.5, h:1.1, fontSize:36, bold:true, color:D.WHITE, fontFace:'Calibri', margin:0 });
+  s.addText(reportData.period || '', { x:0.55, y:2.42, w:7, h:0.42, fontSize:15, color:D.TEAL_LT, fontFace:'Calibri', margin:0 });
+  if (reportData.generatedDate)
+    s.addText(`Generated: ${reportData.generatedDate}`, { x:0.55, y:2.95, w:8.5, h:0.35, fontSize:11.5, color:'A0AEC0', fontFace:'Calibri', margin:0 });
+
+  [{ val: String(reportData.totalChanges || ''), label:'Total Changes', bx:0.55 },
+   { val: String(reportData.categories?.length || ''), label:'Categories', bx:3.55 }
+  ].forEach(st => {
+    s.addShape(pres.shapes.RECTANGLE, { x:st.bx, y:3.65, w:2.6, h:1.25, fill:{color:D.TEAL, transparency:82}, line:{color:D.TEAL} });
+    s.addText(st.val,   { x:st.bx, y:3.68, w:2.6, h:0.72, fontSize:46, bold:true, color:D.TEAL_LT, align:'center', fontFace:'Calibri', margin:0 });
+    s.addText(st.label, { x:st.bx, y:4.38, w:2.6, h:0.4,  fontSize:12, color:D.WHITE, align:'center', fontFace:'Calibri', margin:0 });
+  });
+
+  // ── Summary overview ──
+  s = pres.addSlide();
+  s.background = { color: D.LIGHT_BG };
+  s.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:10, h:0.82, fill:{color:D.DARK}, line:{color:D.DARK} });
+  s.addText('Change Summary Overview', { x:0.38, y:0, w:8.5, h:0.82, fontSize:22, bold:true, color:D.WHITE, fontFace:'Calibri', valign:'middle', margin:0 });
+  s.addText(reportData.period || '', { x:0.38, y:0, w:9.35, h:0.82, fontSize:12, color:D.TEAL_LT, align:'right', fontFace:'Calibri', valign:'middle', margin:0 });
+
+  const cats = reportData.categories || [];
+  const cols = 3, sw = 2.92, sh = 1.38, sx = 0.22, sy = 0.96, sgx = 0.16, sgy = 0.12;
+  cats.forEach((cat, i) => {
+    const color = CAT_COLORS[i % CAT_COLORS.length];
+    const cx = sx + (i % cols) * (sw + sgx);
+    const cy = sy + Math.floor(i / cols) * (sh + sgy);
+    s.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:sw, h:sh, fill:{color:D.WHITE}, shadow:mkShadow() });
+    s.addShape(pres.shapes.RECTANGLE, { x:cx, y:cy, w:0.07, h:sh, fill:{color}, line:{color} });
+    s.addText(String(cat.count || cat.changes?.length || 0), { x:cx+0.18, y:cy+0.10, w:0.9, h:0.75, fontSize:34, bold:true, color, fontFace:'Calibri', margin:0 });
+    s.addText('changes', { x:cx+0.18, y:cy+0.85, w:1.1, h:0.3, fontSize:9.5, color:D.MUTED, fontFace:'Calibri', margin:0 });
+    s.addText(cat.name,  { x:cx+1.12, y:cy+0.22, w:sw-1.22, h:0.88, fontSize:12.5, bold:true, color:D.DARK, fontFace:'Calibri', valign:'middle', margin:0, wrap:true });
+  });
+
+  // ── Per-category slides ──
+  cats.forEach((cat, ci) => {
+    const color = CAT_COLORS[ci % CAT_COLORS.length];
+    const count = cat.changes?.length || cat.count || 0;
+
+    // Section divider
+    const sec = pres.addSlide();
+    sec.background = { color: D.DARK };
+    sec.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:0.28, h:5.625, fill:{color}, line:{color} });
+    sec.addShape(pres.shapes.OVAL,      { x:6.8, y:-0.3, w:4.5, h:4.5, fill:{color, transparency:91}, line:{color, transparency:91} });
+    sec.addText(cat.name, { x:0.65, y:1.6, w:8.5, h:1.3, fontSize:36, bold:true, color:D.WHITE, fontFace:'Calibri', margin:0 });
+    sec.addText(`${count} Change${count !== 1 ? 's' : ''} this period`, { x:0.65, y:3.05, w:6, h:0.45, fontSize:15, color, fontFace:'Calibri', margin:0 });
+    sec.addText(reportData.period || '', { x:0.65, y:3.58, w:4, h:0.38, fontSize:11, color:'A0AEC0', fontFace:'Calibri', margin:0 });
+
+    // 9 cards per slide
+    const changes = cat.changes || [];
+    for (let j = 0; j < changes.length; j += 9) {
+      const cs = pres.addSlide();
+      cs.background = { color: D.LIGHT_BG };
+      addHeaderBar(pres, cs, cat.name, `${count} changes`, color);
+      changes.slice(j, j+9).forEach((ch, idx) => {
+        addCard(pres, cs, ch, idx % 3, Math.floor(idx / 3), color);
+      });
+    }
+  });
+
+  // ── Closing slide ──
+  const cl = pres.addSlide();
+  cl.background = { color: D.DARK };
+  cl.addShape(pres.shapes.RECTANGLE, { x:0, y:0, w:0.28, h:5.625, fill:{color:D.TEAL}, line:{color:D.TEAL} });
+  cl.addShape(pres.shapes.OVAL,      { x:6.5, y:1.2, w:4.5, h:4.5, fill:{color:D.TEAL, transparency:91}, line:{color:D.TEAL, transparency:91} });
+  cl.addText('rain',         { x:0.55, y:0.85, w:2, h:0.44, fontSize:19, bold:true, color:D.TEAL_LT, fontFace:'Calibri', margin:0 });
+  cl.addText('End of Report',{ x:0.55, y:1.48, w:7.5, h:0.95, fontSize:38, bold:true, color:D.WHITE, fontFace:'Calibri', margin:0 });
+  cl.addText(reportData.reportTitle || 'Change Management Report', { x:0.55, y:2.6, w:7, h:0.42, fontSize:14, color:D.TEAL_LT, fontFace:'Calibri', margin:0 });
+  if (reportData.generatedDate)
+    cl.addText(`Generated: ${reportData.generatedDate} · All Categories · All Change Types`, { x:0.55, y:3.1, w:7, h:0.38, fontSize:11, color:'A0AEC0', fontFace:'Calibri', margin:0 });
+
+  return pres.write({ outputType:'blob' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main generate flow
+// ─────────────────────────────────────────────────────────────────────────────
+btnGenerate.addEventListener('click', async () => {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey || !selectedFile) return;
+
+  btnGenerate.disabled = true;
+  btnLabel.textContent = '⏳ Processing…';
+  initProgress();
+
+  try {
+    // Step 0: read PDF
+    setStep(0);
+    const base64 = await fileToBase64(selectedFile);
+
+    // Step 1: Claude extraction
+    setStep(1);
+    const reportData = await extractChangesFromPDF(base64, apiKey);
+
+    // Step 2: parse
+    setStep(2);
+    const totalFound = reportData.categories?.reduce((s,c) => s + (c.changes?.length||0), 0) || 0;
+    await new Promise(r => setTimeout(r, 300)); // brief pause for UX
+
+    // Step 3: build slides
+    setStep(3);
+    await new Promise(r => setTimeout(r, 100));
+    const blob = await buildPPTX(reportData);
+
+    // Step 4: finalise
+    setStep(4);
+    await new Promise(r => setTimeout(r, 200));
+    finishProgress();
+
+    pptxBlob = blob;
+    const period = (reportData.period || 'report').replace(/\s+/g, '_').toLowerCase();
+    pptxFilename = `change_management_${period}.pptx`;
+
+    const catCount  = reportData.categories?.length || 0;
+    showResult(true,
+      'Presentation ready!',
+      `Extracted ${totalFound} changes across ${catCount} categories. Your 3×3 grid deck is ready to download.`
+    );
+
+  } catch (err) {
+    finishProgress();
+    showResult(false, 'Generation failed', err.message || 'An unexpected error occurred. Check your API key and try again.');
+    console.error(err);
+  } finally {
+    btnGenerate.disabled = false;
+    btnLabel.textContent = '⚡ Generate Presentation';
+    updateBtn();
+  }
+});
+
+btnDownload.addEventListener('click', () => {
+  if (!pptxBlob) return;
+  const url = URL.createObjectURL(pptxBlob);
+  const a   = document.createElement('a');
+  a.href     = url;
+  a.download = pptxFilename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
+</script>
+</body>
+</html>
