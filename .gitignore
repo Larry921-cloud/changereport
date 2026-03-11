@@ -1,0 +1,51 @@
+# Node modules
+node_modules/
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build outputs
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Claude Code local settings
+.claude/
+
+# Windows Zone Identifier files
+*:Zone.Identifier
+*:sec.endpointdlp
+
+# Generated reports / uploaded data
+*.pdf
+*.xlsx
+*.xls
+server-log.txt
+server.js.backup-*

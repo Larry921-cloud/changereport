@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ITIL 4 Change Enablement Analysis</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔧 ITIL 4 Change Enablement Analysis</h1>
+            <p>Upload your change management spreadsheet to generate comprehensive insights</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section id="uploadSection" class="card">
+                <h2>Upload Change Data</h2>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept=".xls,.xlsx,.txt" hidden>
+                    <div class="upload-prompt">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Click to browse or drag and drop your file here</p>
+                        <span class="file-types">Supports: XLS, XLSX, TXT (Unicode Text)</span>
+                    </div>
+                </div>
+                <div class="button-container">
+                    <button id="uploadBtn" class="btn btn-primary btn-large" style="display: none;">
+                        🚀 Upload & Analyze
+                    </button>
+                </div>
+                <div id="uploadStatus" class="status-message"></div>
+            </section>
+
+            <!-- Analysis Results Section -->
+            <section id="resultsSection" class="card" style="display: none;">
+                <h2>Analysis Complete</h2>
+                <div id="summaryStats" class="stats-grid"></div>
+
+                <div class="button-group">
+                    <button id="generateReportBtn" class="btn btn-success btn-large">
+                        📊 Generate Interactive Report
+                    </button>
+                    <button id="uploadNewBtn" class="btn btn-secondary">
+                        ⬆️ Upload New File
+                    </button>
+                </div>
+            </section>
+
+            <!-- Quick Preview Section -->
+            <section id="previewSection" class="card" style="display: none;">
+                <h2>Quick Preview</h2>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h3>Changes by Category</h3>
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Changes Over Time</h3>
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

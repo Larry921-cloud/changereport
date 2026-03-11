@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Upload{% endblock %}
+
+{% block content %}
+<div style="max-width: 700px; margin: 2rem auto;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h2 style="color: var(--primary); font-size: 1.5rem; margin-bottom: 0.5rem;">
+            Analyze Your Change Data
+        </h2>
+        <p style="color: var(--text-light);">
+            Upload a change management spreadsheet to generate a comprehensive ITIL 4 report
+            with charts, statistics, and plain-English explanations.
+        </p>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            &#128196; Upload Change Data
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/upload" enctype="multipart/form-data" id="uploadForm">
+                <!-- Drop zone -->
+                <div id="dropZone" style="
+                    border: 2px dashed var(--border);
+                    border-radius: 12px;
+                    padding: 3rem 2rem;
+                    text-align: center;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    margin-bottom: 1.5rem;
+                    background: #fafbfc;
+                " onclick="document.getElementById('fileInput').click()">
+                    <div style="font-size: 3rem; margin-bottom: 0.5rem;">&#128194;</div>
+                    <p style="font-size: 1rem; font-weight: 600; color: var(--primary);">
+                        Drop your file here or click to browse
+                    </p>
+                    <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.5rem;">
+                        Supported formats: .txt (tab-delimited), .xls, .xlsx
+                    </p>
+                    <p id="fileName" style="
+                        font-size: 0.9rem;
+                        color: var(--success);
+                        font-weight: 600;
+                        margin-top: 1rem;
+                        display: none;
+                    "></p>
+                </div>
+
+                <input type="file" id="fileInput" name="file"
+                       accept=".txt,.xls,.xlsx,.tsv,.csv"
+                       style="display: none;"
+                       required>
+
+                <!-- Report title -->
+                <div style="margin-bottom: 1.5rem;">
+                    <label for="title" style="
+                        display: block;
+                        font-weight: 600;
+                        font-size: 0.9rem;
+                        margin-bottom: 0.5rem;
+                        color: var(--text);
+                    ">Report Title (optional)</label>
+                    <input type="text" id="title" name="title"
+                           placeholder="ITIL 4 Change Enablement Report"
+                           value="ITIL 4 Change Enablement Report"
+                           style="
+                        width: 100%;
+                        padding: 0.75rem 1rem;
+                        border: 1px solid var(--border);
+                        border-radius: 8px;
+                        font-size: 0.95rem;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    ">
+                </div>
+
+                <!-- Submit button -->
+                <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;" id="submitBtn">
+                    &#9889; Generate Report
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div style="margin-top: 2rem;">
+        <div class="card">
+            <div class="card-header">&#128161; What you'll get</div>
+            <div class="card-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <p style="font-weight: 600; color: var(--primary); margin-bottom: 0.25rem;">&#128202; Visual Charts</p>
+                        <p style="font-size: 0.85rem; color: var(--text-light);">6 charts covering categories, types, impact, timeline, and workload</p>
+                    </div>
+                    <div>
+                        <p style="font-weight: 600; color: var(--primary); margin-bottom: 0.25rem;">&#128221; Executive Summary</p>
+                        <p style="font-size: 0.85rem; color: var(--text-light);">Key statistics and trends at a glance</p>
+                    </div>
+                    <div>
+                        <p style="font-weight: 600; color: var(--primary); margin-bottom: 0.25rem;">&#128172; Plain English</p>
+                        <p style="font-size: 0.85rem; color: var(--text-light);">Each change explained in non-technical language</p>
+                    </div>
+                    <div>
+                        <p style="font-weight: 600; color: var(--primary); margin-bottom: 0.25rem;">&#128196; PDF Report</p>
+                        <p style="font-size: 0.85rem; color: var(--text-light);">Downloadable professional report ready for stakeholders</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileName = document.getElementById('fileName');
+    const form = document.getElementById('uploadForm');
+
+    // File input change
+    fileInput.addEventListener('change', function() {
+        if (this.files.length > 0) {
+            fileName.textContent = '\u2705 ' + this.files[0].name + ' (' + formatSize(this.files[0].size) + ')';
+            fileName.style.display = 'block';
+            dropZone.style.borderColor = 'var(--success)';
+            dropZone.style.background = '#f1f8e9';
+        }
+    });
+
+    // Drag and drop
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.style.borderColor = 'var(--accent)';
+        this.style.background = '#e3f2fd';
+    });
+
+    dropZone.addEventListener('dragleave', function() {
+        this.style.borderColor = 'var(--border)';
+        this.style.background = '#fafbfc';
+    });
+
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.style.borderColor = 'var(--success)';
+        this.style.background = '#f1f8e9';
+        fileInput.files = e.dataTransfer.files;
+        if (e.dataTransfer.files.length > 0) {
+            fileName.textContent = '\u2705 ' + e.dataTransfer.files[0].name + ' (' + formatSize(e.dataTransfer.files[0].size) + ')';
+            fileName.style.display = 'block';
+        }
+    });
+
+    // Show loading on submit
+    form.addEventListener('submit', function() {
+        if (fileInput.files.length > 0) {
+            document.getElementById('loadingOverlay').classList.add('active');
+        }
+    });
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+</script>
+{% endblock %}

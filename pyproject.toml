@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "changereport"
+version = "1.0.0"
+description = "ITIL 4 Change Enablement Report Generator"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "reportlab>=4.0",
+    "openpyxl>=3.1",
+]
+
+[project.scripts]
+changereport = "changereport.cli:main"

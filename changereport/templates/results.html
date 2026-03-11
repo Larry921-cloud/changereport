@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}Report Results{% endblock %}
+
+{% block content %}
+<!-- Action bar -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h2 style="color: var(--primary); font-size: 1.35rem;">{{ title }}</h2>
+        {% if date_range[0] and date_range[1] %}
+        <p style="color: var(--text-light); font-size: 0.9rem;">
+            {{ date_range[0].strftime('%d %B %Y') }} &mdash; {{ date_range[1].strftime('%d %B %Y') }}
+        </p>
+        {% endif %}
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+        <button onclick="exportFilteredPDF()" class="btn btn-success btn-lg" id="exportBtn">
+            &#128196; Export Filtered PDF
+        </button>
+        <a href="/" class="btn btn-primary">
+            &#128193; Upload Another
+        </a>
+    </div>
+</div>
+
+<!-- Stats cards (dynamic) -->
+<div class="stats-grid" id="statsGrid">
+    <div class="stat-card">
+        <div class="stat-value" id="statTotal">{{ total_changes }}</div>
+        <div class="stat-label">Total Changes</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statHighImpact">{{ high_impact_count }}</div>
+        <div class="stat-label">High-Impact Changes</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statCategories">{{ category_count }}</div>
+        <div class="stat-label">Categories</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statImplementers">{{ implementer_count }}</div>
+        <div class="stat-label">Implementers</div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="card filter-card" style="margin-bottom: 1.5rem;">
+    <div class="card-header" style="cursor: pointer;" onclick="toggleFilterPanel()">
+        &#128269; Filters
+        <span id="filterBadge" class="filter-badge" style="display: none;"></span>
+        <span style="margin-left: auto; font-size: 0.8rem; color: var(--text-light);" id="filterToggleIcon">&#9660; Show</span>
+    </div>
+    <div class="card-body filter-panel" id="filterPanel" style="display: none;">
+        <div class="filter-grid">
+            <!-- Category filter -->
+            <div class="filter-group">
+                <label class="filter-label">Category</label>
+                <div class="filter-options" id="filterCategory">
+                    {% for cat in filter_categories %}
+                    <label class="filter-checkbox">
+                        <input type="checkbox" value="{{ cat }}" checked onchange="applyFilters()">
+                        <span>{{ cat }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Type filter -->
+            <div class="filter-group">
+                <label class="filter-label">Change Type</label>
+                <div class="filter-options" id="filterType">
+                    {% for t in filter_types %}
+                    <label class="filter-checkbox">
+                        <input type="checkbox" value="{{ t }}" checked onchange="applyFilters()">
+                        <span>{{ t }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Impact filter -->
+            <div class="filter-group">
+                <label class="filter-label">Impact Level</label>
+                <div class="filter-options" id="filterImpact">
+                    {% for imp in filter_impacts %}
+                    <label class="filter-checkbox">
+                        <input type="checkbox" value="{{ imp }}" checked onchange="applyFilters()">
+                        <span>{{ imp }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Date range + Implementer search -->
+            <div class="filter-group">
+                <label class="filter-label">Date Range</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="date" id="filterDateFrom" class="date-input" onchange="applyFilters()">
+                    <span style="color: var(--text-light);">to</span>
+                    <input type="date" id="filterDateTo" class="date-input" onchange="applyFilters()">
+                </div>
+                <label class="filter-label" style="margin-top: 0.75rem;">Implementer</label>
+                <input type="text" id="filterImplementer" class="text-input" placeholder="Search by name..."
+                       oninput="applyFilters()">
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+            <button onclick="clearFilters()" class="btn btn-outline">&#10006; Clear Filters</button>
+            <button onclick="selectAllFilters()" class="btn btn-outline">&#10004; Select All</button>
+            <span style="margin-left: auto; color: var(--text-light); font-size: 0.85rem; align-self: center;" id="filterCount"></span>
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="card" style="margin-bottom: 2rem;">
+    <div class="card-header">&#128202; Visual Analysis</div>
+    <div class="card-body">
+        <div class="chart-grid">
+            {% for key, info in chart_info %}
+            {% if key in charts %}
+            <div class="chart-card">
+                <img src="data:image/png;base64,{{ charts[key] }}" alt="{{ info.title }}">
+                <div class="chart-caption">{{ info.caption }}</div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Export loading overlay -->
+<div class="loading-overlay" id="exportOverlay">
+    <div class="spinner" style="display: block;"></div>
+    <p style="font-size: 1.1rem; color: var(--primary); font-weight: 600;">Generating filtered PDF report...</p>
+    <p style="font-size: 0.85rem; color: var(--text-light);">This may take a few seconds</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// All change data from server
+const allChanges = {{ changes_json|safe }};
+const DATA_ID = "{{ data_id }}";
+const REPORT_TITLE = {{ title|tojson }};
+
+let filteredChanges = [...allChanges];
+let filterPanelOpen = false;
+
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', function() {
+    applyFilters();
+});
+
+// --- Filter Panel Toggle ---
+function toggleFilterPanel() {
+    filterPanelOpen = !filterPanelOpen;
+    const panel = document.getElementById('filterPanel');
+    const icon = document.getElementById('filterToggleIcon');
+    panel.style.display = filterPanelOpen ? 'block' : 'none';
+    icon.innerHTML = filterPanelOpen ? '&#9650; Hide' : '&#9660; Show';
+}
+
+// --- Filtering ---
+function getCheckedValues(containerId) {
+    const container = document.getElementById(containerId);
+    const checked = container.querySelectorAll('input[type="checkbox"]:checked');
+    return Array.from(checked).map(cb => cb.value);
+}
+
+function getAllValues(containerId) {
+    const container = document.getElementById(containerId);
+    const all = container.querySelectorAll('input[type="checkbox"]');
+    return Array.from(all).map(cb => cb.value);
+}
+
+function applyFilters() {
+    const categories = getCheckedValues('filterCategory');
+    const types = getCheckedValues('filterType');
+    const impacts = getCheckedValues('filterImpact');
+    const dateFrom = document.getElementById('filterDateFrom').value;
+    const dateTo = document.getElementById('filterDateTo').value;
+    const implementer = document.getElementById('filterImplementer').value.toLowerCase();
+
+    filteredChanges = allChanges.filter(c => {
+        if (!categories.includes(c.category)) return false;
+        if (!types.includes(c.type)) return false;
+        if (!impacts.includes(c.impact)) return false;
+
+        if (implementer && !c.implementer.toLowerCase().includes(implementer)) return false;
+
+        if (dateFrom && c.start_ts > 0) {
+            const from = new Date(dateFrom).getTime() / 1000;
+            if (c.start_ts < from) return false;
+        }
+        if (dateTo && c.start_ts > 0) {
+            const to = new Date(dateTo).getTime() / 1000 + 86400;
+            if (c.start_ts >= to) return false;
+        }
+
+        return true;
+    });
+
+    updateStats();
+    updateFilterBadge();
+}
+
+function clearFilters() {
+    // Uncheck all
+    document.querySelectorAll('.filter-options input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    document.getElementById('filterImplementer').value = '';
+    applyFilters();
+}
+
+function selectAllFilters() {
+    document.querySelectorAll('.filter-options input[type="checkbox"]').forEach(cb => cb.checked = true);
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    document.getElementById('filterImplementer').value = '';
+    applyFilters();
+}
+
+function updateFilterBadge() {
+    const badge = document.getElementById('filterBadge');
+    const totalCats = getAllValues('filterCategory').length;
+    const totalTypes = getAllValues('filterType').length;
+    const totalImpacts = getAllValues('filterImpact').length;
+    const checkedCats = getCheckedValues('filterCategory').length;
+    const checkedTypes = getCheckedValues('filterType').length;
+    const checkedImpacts = getCheckedValues('filterImpact').length;
+    const dateFrom = document.getElementById('filterDateFrom').value;
+    const dateTo = document.getElementById('filterDateTo').value;
+    const implementer = document.getElementById('filterImplementer').value;
+
+    const isFiltered = (checkedCats < totalCats) || (checkedTypes < totalTypes) ||
+                       (checkedImpacts < totalImpacts) || dateFrom || dateTo || implementer;
+
+    const filterCountEl = document.getElementById('filterCount');
+
+    if (isFiltered) {
+        badge.style.display = 'inline-block';
+        badge.textContent = filteredChanges.length + ' of ' + allChanges.length;
+        filterCountEl.textContent = filteredChanges.length + ' of ' + allChanges.length + ' changes match';
+    } else {
+        badge.style.display = 'none';
+        filterCountEl.textContent = allChanges.length + ' changes';
+    }
+}
+
+function updateStats() {
+    document.getElementById('statTotal').textContent = filteredChanges.length;
+
+    const highImpact = filteredChanges.filter(c =>
+        c.impact !== 'No Impact' && c.impact !== '' && c.impact !== 'nan'
+    ).length;
+    document.getElementById('statHighImpact').textContent = highImpact;
+
+    const cats = new Set(filteredChanges.map(c => c.category).filter(c => c && c !== 'nan'));
+    document.getElementById('statCategories').textContent = cats.size;
+
+    const impls = new Set(filteredChanges.map(c => c.implementer).filter(c => c && c !== 'nan'));
+    document.getElementById('statImplementers').textContent = impls.size;
+}
+
+// --- Export Filtered PDF ---
+function exportFilteredPDF() {
+    const overlay = document.getElementById('exportOverlay');
+    overlay.classList.add('active');
+
+    const categories = getCheckedValues('filterCategory');
+    const types = getCheckedValues('filterType');
+    const impacts = getCheckedValues('filterImpact');
+    const dateFrom = document.getElementById('filterDateFrom').value;
+    const dateTo = document.getElementById('filterDateTo').value;
+    const implementer = document.getElementById('filterImplementer').value;
+
+    const payload = {
+        data_id: DATA_ID,
+        title: REPORT_TITLE,
+        filters: {
+            categories: categories,
+            types: types,
+            impacts: impacts,
+            date_from: dateFrom || null,
+            date_to: dateTo || null,
+            implementer: implementer || null,
+        }
+    };
+
+    fetch('/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+    .then(resp => resp.json())
+    .then(data => {
+        overlay.classList.remove('active');
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            window.location.href = '/download/' + data.filename;
+        }
+    })
+    .catch(err => {
+        overlay.classList.remove('active');
+        alert('Error generating PDF: ' + err.message);
+    });
+}
+</script>
+{% endblock %}

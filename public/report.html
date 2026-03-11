@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Report - Interactive Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="report-styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="report-container">
+        <!-- Header -->
+        <header class="report-header">
+            <div class="header-content">
+                <h1>📊 Change Management Report</h1>
+                <p class="report-subtitle">Comprehensive Analysis & Insights</p>
+                <div class="report-meta">
+                    <span id="reportDate"></span>
+                    <span id="recordCount"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Filters Section -->
+        <section class="filters-section">
+            <div class="filter-card">
+                <h2>🔍 Filters</h2>
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label for="categoryFilter">Change Category (Multi-select)</label>
+                        <select id="categoryFilter" class="filter-select" multiple size="5">
+                        </select>
+                        <small class="filter-hint">Hold Ctrl/Cmd to select multiple</small>
+                    </div>
+                    <div class="filter-group">
+                        <label for="typeFilter">Type of Change (Multi-select)</label>
+                        <select id="typeFilter" class="filter-select" multiple size="3">
+                        </select>
+                        <small class="filter-hint">Hold Ctrl/Cmd to select multiple</small>
+                    </div>
+                    <div class="filter-group">
+                        <label for="dateFromFilter">Date From</label>
+                        <input type="date" id="dateFromFilter" class="filter-input">
+                    </div>
+                    <div class="filter-group">
+                        <label for="dateToFilter">Date To</label>
+                        <input type="date" id="dateToFilter" class="filter-input">
+                        <small class="filter-hint" style="color: #2196F3; font-weight: 500;">ℹ️ Standard changes bypass date filters</small>
+                    </div>
+                    <div class="filter-actions">
+                        <button id="applyFiltersBtn" class="btn btn-primary">Apply Filters</button>
+                        <button id="resetFiltersBtn" class="btn btn-secondary">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Summary Statistics -->
+        <section class="summary-section">
+            <div class="stats-grid">
+                <div class="stat-card gradient-blue">
+                    <div class="stat-icon">📋</div>
+                    <div class="stat-value" id="totalChanges">0</div>
+                    <div class="stat-label">Total Changes</div>
+                </div>
+                <div class="stat-card gradient-green">
+                    <div class="stat-icon">📂</div>
+                    <div class="stat-value" id="totalCategories">0</div>
+                    <div class="stat-label">Categories</div>
+                </div>
+                <div class="stat-card gradient-orange">
+                    <div class="stat-icon">⚙️</div>
+                    <div class="stat-value" id="totalSystems">0</div>
+                    <div class="stat-label">Systems</div>
+                </div>
+                <div class="stat-card gradient-purple">
+                    <div class="stat-icon">📅</div>
+                    <div class="stat-value" id="dateRange">-</div>
+                    <div class="stat-label">Date Range</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts Section -->
+        <section class="charts-section">
+            <div class="chart-card">
+                <h3>Changes by Category</h3>
+                <canvas id="categoryChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Changes by Type</h3>
+                <canvas id="typeChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Top 10 Systems</h3>
+                <canvas id="systemsChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Impact Distribution</h3>
+                <canvas id="impactChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Detailed Changes Table -->
+        <section class="table-section">
+            <div class="table-card">
+                <div class="table-header">
+                    <h3>📝 Detailed Change Records</h3>
+                    <button id="exportBtn" class="btn btn-success">📄 Export to PDF</button>
+                </div>
+                <div class="table-wrapper">
+                    <table id="changesTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Date</th>
+                                <th>Category</th>
+                                <th>Type</th>
+                                <th>Subject</th>
+                                <th>System</th>
+                                <th>Impact</th>
+                                <th>Explanation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Insights Section -->
+        <section class="insights-section">
+            <div class="insights-card">
+                <h3>💡 Key Insights</h3>
+                <div id="insightsContent"></div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="report-footer">
+            <p>Generated by Change Enablement App | <span id="footerDate"></span></p>
+            <p class="footer-note">This report can be shared with external users and viewed offline</p>
+        </footer>
+    </div>
+
+    <script src="report.js"></script>
+</body>
+</html>
