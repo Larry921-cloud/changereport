@@ -597,7 +597,7 @@ Rules:
     },
     body: JSON.stringify({
       model: 'claude-opus-4-6',
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: systemPrompt,
       messages: [{
         role: 'user',
@@ -618,9 +618,68 @@ Rules:
   }
 
   const data = await response.json();
+
+  // Check if response was cut off due to max_tokens
+  const stopReason = data.stop_reason;
   const raw  = data.content.find(b => b.type === 'text')?.text || '';
   const clean = raw.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+
+  // Attempt direct parse first
+  try {
+    return JSON.parse(clean);
+  } catch (e) {
+    // If truncated (stop_reason === 'max_tokens'), attempt to repair the JSON
+    if (stopReason === 'max_tokens' || e.message.includes('Unterminated')) {
+      console.warn('JSON truncated, attempting repair...');
+      const repaired = repairTruncatedJSON(clean);
+      try {
+        const parsed = JSON.parse(repaired);
+        // Warn the user that some changes may be missing
+        parsed._truncated = true;
+        return parsed;
+      } catch (e2) {
+        throw new Error(
+          'The PDF produced too much data for a single API call. ' +
+          'Try splitting the report into smaller sections (e.g. one category at a time), ' +
+          'or contact your admin to increase the token limit.'
+        );
+      }
+    }
+    throw new Error('Failed to parse API response: ' + e.message);
+  }
+}
+
+// Attempt to repair a truncated JSON string by closing all open structures
+function repairTruncatedJSON(str) {
+  // Remove any trailing incomplete string/value
+  let s = str.trimEnd();
+
+  // Remove trailing comma if present before we close
+  s = s.replace(/,\s*$/, '');
+
+  // Count open braces and brackets to figure out what needs closing
+  let braces = 0, brackets = 0, inString = false, escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escape)          { escape = false; continue; }
+    if (c === '\\' && inString) { escape = true; continue; }
+    if (c === '"')       { inString = !inString; continue; }
+    if (inString)        continue;
+    if (c === '{')       braces++;
+    else if (c === '}')  braces--;
+    else if (c === '[')  brackets++;
+    else if (c === ']')  brackets--;
+  }
+
+  // If we're mid-string, close it
+  if (inString) s += '"';
+
+  // Remove any dangling partial key/value at the end (incomplete object)
+  // Close open brackets/braces
+  for (let i = 0; i < brackets; i++) s += ']';
+  for (let i = 0; i < braces; i++)   s += '}';
+
+  return s;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -802,9 +861,15 @@ btnGenerate.addEventListener('click', async () => {
     pptxFilename = `change_management_${period}.pptx`;
 
     const catCount  = reportData.categories?.length || 0;
+    const truncated = reportData._truncated;
+    const expectedTotal = reportData.totalChanges || 0;
+    const truncWarning = truncated
+      ? ` ⚠️ Response was truncated — ${totalFound} of ~${expectedTotal} changes captured. Some may be missing.`
+      : '';
+
     showResult(true,
-      'Presentation ready!',
-      `Extracted ${totalFound} changes across ${catCount} categories. Your 3×3 grid deck is ready to download.`
+      truncated ? 'Presentation ready (partial)' : 'Presentation ready!',
+      `Extracted ${totalFound} changes across ${catCount} categories. Your 3×3 grid deck is ready to download.${truncWarning}`
     );
 
   } catch (err) {
