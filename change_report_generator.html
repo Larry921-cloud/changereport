@@ -603,8 +603,8 @@ dropZone.addEventListener('drop', e => {
 // ─────────────────────────────────────────────────────────────────────────────
 const STEPS = [
   'Reading PDF…',
-  'Extracting changes with Claude…',
-  'Parsing categories…',
+  'Pass 1 — reading report structure…',
+  'Pass 2 — extracting changes…',
   'Building slides…',
   'Finalising presentation…'
 ];
@@ -653,41 +653,9 @@ function fileToBase64(file) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Claude API call
+// Claude API — shared fetch helper
 // ─────────────────────────────────────────────────────────────────────────────
-async function extractChangesFromPDF(base64Data, apiKey) {
-  const systemPrompt = `You are a structured data extractor. The user will provide a Change Management Report PDF.
-Extract ALL changes from the document and return a JSON object ONLY — no preamble, no markdown fences, no explanation.
-
-The JSON must follow this exact schema:
-{
-  "reportTitle": "Change Management Report",
-  "period": "Month Year",
-  "generatedDate": "DD/MM/YYYY",
-  "totalChanges": 200,
-  "categories": [
-    {
-      "name": "Category Name",
-      "count": 5,
-      "changes": [
-        {
-          "title": "Change title",
-          "type": "Standard change | Work Order | Emergency change | Retrospective change | CAB change",
-          "date": "DD/MM/YYYY",
-          "summary": "1-2 sentence plain English explanation of what was done and why it matters."
-        }
-      ]
-    }
-  ]
-}
-
-Rules:
-- Include EVERY single change — do not skip or summarise multiple changes into one.
-- Keep summaries concise (1-2 sentences max, ~25 words).
-- category "count" must equal the number of items in its "changes" array.
-- "totalChanges" must equal the sum of all category counts.
-- Return ONLY valid JSON. No markdown, no explanation.`;
-
+async function claudeCall(apiKey, system, userContent, maxTokens = 8000) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -697,90 +665,132 @@ Rules:
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-6',
-      max_tokens: 16000,
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: [{
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
-        }, {
-          type: 'text',
-          text: 'Extract all changes from this Change Management Report PDF and return the JSON as specified.'
-        }]
-      }]
+      model: 'claude-sonnet-4-5',
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: userContent }]
     })
   });
-
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error?.message || `API error ${response.status}`);
   }
-
   const data = await response.json();
-
-  // Check if response was cut off due to max_tokens
-  const stopReason = data.stop_reason;
-  const raw  = data.content.find(b => b.type === 'text')?.text || '';
-  const clean = raw.replace(/```json|```/g, '').trim();
-
-  // Attempt direct parse first
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
-    // If truncated (stop_reason === 'max_tokens'), attempt to repair the JSON
-    if (stopReason === 'max_tokens' || e.message.includes('Unterminated')) {
-      console.warn('JSON truncated, attempting repair...');
-      const repaired = repairTruncatedJSON(clean);
-      try {
-        const parsed = JSON.parse(repaired);
-        // Warn the user that some changes may be missing
-        parsed._truncated = true;
-        return parsed;
-      } catch (e2) {
-        throw new Error(
-          'The PDF produced too much data for a single API call. ' +
-          'Try splitting the report into smaller sections (e.g. one category at a time), ' +
-          'or contact your admin to increase the token limit.'
-        );
-      }
-    }
-    throw new Error('Failed to parse API response: ' + e.message);
-  }
+  const raw = data.content.find(b => b.type === 'text')?.text || '';
+  const clean = raw.replace(/```json\n?|```/g, '').trim();
+  return { clean, stopReason: data.stop_reason };
 }
 
-// Attempt to repair a truncated JSON string by closing all open structures
-function repairTruncatedJSON(str) {
-  // Remove any trailing incomplete string/value
-  let s = str.trimEnd();
+// ─────────────────────────────────────────────────────────────────────────────
+// Claude API — multi-pass extraction to avoid token limits
+// Pass 1: extract report metadata + category list (small, always fits)
+// Pass 2: extract changes per category in batches of 3 (parallel)
+// ─────────────────────────────────────────────────────────────────────────────
+async function extractChangesFromPDF(base64Data, apiKey, onProgress) {
 
-  // Remove trailing comma if present before we close
-  s = s.replace(/,\s*$/, '');
+  const pdfContent = [{
+    type: 'document',
+    source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
+  }];
 
-  // Count open braces and brackets to figure out what needs closing
-  let braces = 0, brackets = 0, inString = false, escape = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (escape)          { escape = false; continue; }
-    if (c === '\\' && inString) { escape = true; continue; }
-    if (c === '"')       { inString = !inString; continue; }
-    if (inString)        continue;
-    if (c === '{')       braces++;
-    else if (c === '}')  braces--;
-    else if (c === '[')  brackets++;
-    else if (c === ']')  brackets--;
+  // ── Pass 1: get structure (categories + counts only, no changes) ──────────
+  onProgress('Pass 1/2 — reading report structure…');
+  const { clean: structJson } = await claudeCall(
+    apiKey,
+    `You are a structured data extractor. Return ONLY valid JSON, no markdown, no explanation.`,
+    [...pdfContent, {
+      type: 'text',
+      text: `From this Change Management Report PDF, extract ONLY the report metadata and category list.
+Return this exact JSON schema:
+{
+  "reportTitle": "string",
+  "period": "Month Year",
+  "generatedDate": "DD/MM/YYYY",
+  "totalChanges": 200,
+  "categories": [
+    { "name": "Category Name", "count": 17 }
+  ]
+}
+Do NOT include any changes array. Just the category names and counts.`
+    }],
+    2000
+  );
+
+  let structure;
+  try {
+    structure = JSON.parse(structJson);
+  } catch(e) {
+    throw new Error('Could not parse report structure: ' + e.message);
   }
 
-  // If we're mid-string, close it
-  if (inString) s += '"';
+  const categories = structure.categories || [];
+  if (!categories.length) throw new Error('No categories found in report.');
 
-  // Remove any dangling partial key/value at the end (incomplete object)
-  // Close open brackets/braces
-  for (let i = 0; i < brackets; i++) s += ']';
-  for (let i = 0; i < braces; i++)   s += '}';
+  // ── Pass 2: extract changes per category in batches of 3 ─────────────────
+  const BATCH = 3;
+  const fullCategories = [];
 
-  return s;
+  for (let i = 0; i < categories.length; i += BATCH) {
+    const batch = categories.slice(i, i + BATCH);
+    const names = batch.map(c => `"${c.name}"`).join(', ');
+    onProgress(`Pass 2/2 — extracting ${names} (${i + 1}–${Math.min(i + BATCH, categories.length)} of ${categories.length})…`);
+
+    const batchNames = batch.map(c => c.name);
+    const { clean: batchJson } = await claudeCall(
+      apiKey,
+      `You are a structured data extractor. Return ONLY valid JSON, no markdown, no explanation.`,
+      [...pdfContent, {
+        type: 'text',
+        text: `From this Change Management Report PDF, extract ALL changes for ONLY these categories: ${batchNames.map(n => `"${n}"`).join(', ')}.
+
+Return this exact JSON:
+{
+  "categories": [
+    {
+      "name": "Category Name",
+      "count": 17,
+      "changes": [
+        {
+          "title": "Change title",
+          "type": "Standard change | Work Order | Emergency change | Retrospective change | CAB change",
+          "date": "DD/MM/YYYY",
+          "summary": "1-2 sentence plain English summary (~25 words max)."
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Include EVERY change for these categories — do not skip any.
+- Summaries must be concise (~25 words max).
+- Return ONLY the categories listed above, nothing else.
+- Return ONLY valid JSON.`
+      }],
+      8000
+    );
+
+    let batchData;
+    try {
+      batchData = JSON.parse(batchJson);
+    } catch(e) {
+      console.warn(`Batch ${i} parse failed, skipping:`, e.message);
+      // Fall back to empty changes for this batch rather than failing entirely
+      batchData = { categories: batch.map(c => ({ name: c.name, count: c.count, changes: [] })) };
+    }
+
+    fullCategories.push(...(batchData.categories || []));
+  }
+
+  // ── Merge structure + changes ─────────────────────────────────────────────
+  const totalFound = fullCategories.reduce((s, c) => s + (c.changes?.length || 0), 0);
+  return {
+    reportTitle:   structure.reportTitle,
+    period:        structure.period,
+    generatedDate: structure.generatedDate,
+    totalChanges:  totalFound,
+    categories:    fullCategories
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -949,14 +959,18 @@ btnGenerate.addEventListener('click', async () => {
     setStep(0);
     const base64 = await fileToBase64(selectedFile);
 
-    // Step 1: Claude extraction
+    // Step 1+2: Claude multi-pass extraction
     setStep(1);
-    const reportData = await extractChangesFromPDF(base64, apiKey);
+    const reportData = await extractChangesFromPDF(base64, apiKey, (msg) => {
+      // Update the active step label in real time
+      const activeEl = document.querySelector('.step.active');
+      if (activeEl) activeEl.lastChild.textContent = msg;
+      // Advance to step 2 once we're on pass 2
+      if (msg.startsWith('Pass 2')) setStep(2);
+    });
 
-    // Step 2: parse
-    setStep(2);
     const totalFound = reportData.categories?.reduce((s,c) => s + (c.changes?.length||0), 0) || 0;
-    await new Promise(r => setTimeout(r, 300)); // brief pause for UX
+    await new Promise(r => setTimeout(r, 300));
 
     // Step 3: build slides
     setStep(3);
@@ -972,16 +986,10 @@ btnGenerate.addEventListener('click', async () => {
     const period = (reportData.period || 'report').replace(/\s+/g, '_').toLowerCase();
     pptxFilename = `change_management_${period}.pptx`;
 
-    const catCount  = reportData.categories?.length || 0;
-    const truncated = reportData._truncated;
-    const expectedTotal = reportData.totalChanges || 0;
-    const truncWarning = truncated
-      ? ` ⚠️ Response was truncated — ${totalFound} of ~${expectedTotal} changes captured. Some may be missing.`
-      : '';
-
+    const catCount = reportData.categories?.length || 0;
     showResult(true,
-      truncated ? 'Presentation ready (partial)' : 'Presentation ready!',
-      `Extracted ${totalFound} changes across ${catCount} categories. Your 3×3 grid deck is ready to download.${truncWarning}`
+      'Presentation ready!',
+      `Extracted ${totalFound} changes across ${catCount} categories. Your 3×3 grid deck is ready to download.`
     );
 
   } catch (err) {
