@@ -7,6 +7,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js"></script>
+<script>
+  // Normalise the global — the bundle may expose it as PptxGenJS or pptxgen
+  window._PptxGenJS = window.PptxGenJS || window.pptxgen || window.PptxGenJs;
+  if (!window._PptxGenJS && typeof pptxgen !== 'undefined') window._PptxGenJS = pptxgen;
+</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -737,7 +742,10 @@ function addCard(pres, slide, change, col, row, color) {
 }
 
 async function buildPPTX(reportData) {
-  const pres = new PptxGenJS();
+  // Resolve whichever global name the bundle registered
+  const PptxCtor = window._PptxGenJS || window.PptxGenJS || window.pptxgen || window.PptxGenJs;
+  if (!PptxCtor) throw new Error('PptxGenJS library failed to load. Check your internet connection and try refreshing the page.');
+  const pres = new PptxCtor();
   pres.layout = 'LAYOUT_16x9';
   pres.title  = reportData.reportTitle || 'Change Management Report';
   const D = PALETTE;
@@ -827,6 +835,14 @@ async function buildPPTX(reportData) {
 btnGenerate.addEventListener('click', async () => {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey || !selectedFile) return;
+
+  // Guard: ensure PptxGenJS loaded from CDN before proceeding
+  const PptxCtor = window._PptxGenJS || window.PptxGenJS || window.pptxgen || window.PptxGenJs;
+  if (!PptxCtor) {
+    showResult(false, 'Library not loaded',
+      'The PptxGenJS library failed to load from the CDN. Please check your internet connection and refresh the page. If you are behind a corporate firewall, the CDN domain (cdnjs.cloudflare.com) may need to be whitelisted.');
+    return;
+  }
 
   btnGenerate.disabled = true;
   btnLabel.textContent = '⏳ Processing…';
