@@ -1020,7 +1020,7 @@ const GAP_X     = 0.10;
 const GAP_Y     = 0.09;
 const CARD_W    = (10 - PAD_X * 2 - GAP_X * 2) / 3;
 const CARD_H    = (5.625 - HEADER_H - PAD_Y_TOP - 0.08 - GAP_Y * 2) / 3;
-const MAX_TITLE = 72;
+const MAX_TITLE = 9999; // No hard truncation — rely on box height wrap
 
 function cardX(col) { return PAD_X + col * (CARD_W + GAP_X); }
 function cardY(row) { return HEADER_H + PAD_Y_TOP + row * (CARD_H + GAP_Y); }
@@ -1042,16 +1042,18 @@ function addCard(pres, slide, change, col, row, color) {
   slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h, fill:{color:D.WHITE}, shadow:mkShadow() });
   slide.addShape(pres.shapes.RECTANGLE, { x, y, w, h:0.05, fill:{color}, line:{color} });
 
-  slide.addText(title, { x:x+pad, y:y+0.07, w:w-pad-0.92, h:0.38, fontSize:8, bold:true, color:D.DARK, fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
+  // Title: taller box (0.52") so 2 full lines fit at 8pt without hard truncation
+  slide.addText(title, { x:x+pad, y:y+0.07, w:w-pad-0.92, h:0.52, fontSize:8, bold:true, color:D.DARK, fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
 
   const bw=0.82, bh=0.20;
   const tc = typeColors(change.type);
   slide.addShape(pres.shapes.RECTANGLE, { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fill:{color:tc.bg}, line:{color:tc.border, width:0.75} });
   slide.addText(change.type || 'Change', { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fontSize:6, bold:true, color:tc.text, align:'center', valign:'middle', fontFace:'Calibri', margin:0 });
 
-  slide.addText(change.date || '', { x:x+pad, y:y+0.48, w:w-pad*2, h:0.17, fontSize:7.5, color:D.MUTED, fontFace:'Calibri', margin:0 });
-  slide.addShape(pres.shapes.LINE, { x:x+pad, y:y+0.67, w:w-pad*2, h:0, line:{color:'E2E8F0', width:0.5} });
-  slide.addText(change.summary || '', { x:x+pad, y:y+0.71, w:w-pad*2, h:h-0.71-0.05, fontSize:7.5, color:'374151', fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
+  // Date / divider / summary shifted down to give title room
+  slide.addText(change.date || '', { x:x+pad, y:y+0.60, w:w-pad*2, h:0.17, fontSize:7.5, color:D.MUTED, fontFace:'Calibri', margin:0 });
+  slide.addShape(pres.shapes.LINE, { x:x+pad, y:y+0.78, w:w-pad*2, h:0, line:{color:'E2E8F0', width:0.5} });
+  slide.addText(change.summary || '', { x:x+pad, y:y+0.82, w:w-pad*2, h:h-0.82-0.05, fontSize:7.5, color:'374151', fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
 }
 
 async function buildPPTX(reportData) {
