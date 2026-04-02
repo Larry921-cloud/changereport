@@ -997,6 +997,22 @@ const CAT_COLORS = [
   'A855F7','84CC16','F43F5E','0EA5E9','D97706'
 ];
 
+// Distinct colours for each change type — consistent across ALL categories
+const TYPE_COLORS = {
+  'standard change':    { bg: 'EFF6FF', border: '3B82F6', text: '1D4ED8' }, // Blue
+  'work order':         { bg: 'F0FDF4', border: '22C55E', text: '15803D' }, // Green
+  'emergency change':   { bg: 'FFF1F2', border: 'F43F5E', text: 'BE123C' }, // Red
+  'retrospective change':{ bg:'FFF7ED', border: 'F97316', text: 'C2410C' }, // Orange
+  'cab change':         { bg: 'FAF5FF', border: 'A855F7', text: '7E22CE' }, // Purple
+};
+const TYPE_DEFAULT =    { bg: 'F1F5F9', border: '64748B', text: '334155' }; // Slate (fallback)
+
+function typeColors(typeStr) {
+  if (!typeStr) return TYPE_DEFAULT;
+  const key = typeStr.toLowerCase().trim();
+  return TYPE_COLORS[key] || TYPE_DEFAULT;
+}
+
 const HEADER_H  = 0.60;
 const PAD_X     = 0.20;
 const PAD_Y_TOP = 0.08;
@@ -1029,8 +1045,9 @@ function addCard(pres, slide, change, col, row, color) {
   slide.addText(title, { x:x+pad, y:y+0.07, w:w-pad-0.92, h:0.38, fontSize:8, bold:true, color:D.DARK, fontFace:'Calibri', margin:0, wrap:true, valign:'top' });
 
   const bw=0.82, bh=0.20;
-  slide.addShape(pres.shapes.RECTANGLE, { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fill:{color, transparency:82}, line:{color, width:0.5} });
-  slide.addText(change.type || 'Change', { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fontSize:6, bold:true, color, align:'center', valign:'middle', fontFace:'Calibri', margin:0 });
+  const tc = typeColors(change.type);
+  slide.addShape(pres.shapes.RECTANGLE, { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fill:{color:tc.bg}, line:{color:tc.border, width:0.75} });
+  slide.addText(change.type || 'Change', { x:x+w-bw-0.06, y:y+0.08, w:bw, h:bh, fontSize:6, bold:true, color:tc.text, align:'center', valign:'middle', fontFace:'Calibri', margin:0 });
 
   slide.addText(change.date || '', { x:x+pad, y:y+0.48, w:w-pad*2, h:0.17, fontSize:7.5, color:D.MUTED, fontFace:'Calibri', margin:0 });
   slide.addShape(pres.shapes.LINE, { x:x+pad, y:y+0.67, w:w-pad*2, h:0, line:{color:'E2E8F0', width:0.5} });
