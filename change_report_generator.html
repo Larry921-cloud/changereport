@@ -723,7 +723,14 @@ async function extractTextFromPDF(base64Data, onProgress) {
       for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        const pageText = content.items.map(item => item.str).join(' ');
+        // Join items with newline when there's a line break (hasEOL), space otherwise
+        let pageText = '';
+        for (let j = 0; j < content.items.length; j++) {
+          const item = content.items[j];
+          pageText += item.str;
+          if (item.hasEOL) pageText += '\n';
+          else if (j + 1 < content.items.length) pageText += ' ';
+        }
         fullText += pageText + '\n';
         if (i % 10 === 0) onProgress(`Extracting text… (page ${i}/${numPages})`);
       }
@@ -792,10 +799,53 @@ async function extractChangesFromPDF(base64Data, apiKey, onProgress) {
 
   // Split text into category sections using "Category Name N changes" header pattern
   // Match lines like "Billing and Revenue 12 changes" or "IP Core 34 changes"
-  const CAT_HEADER = /^([A-Z][A-Za-z &]+?)\s+(\d+)\s+changes/gm;
+  // Match "Category Name N changes" header lines.
+  // Works with both pdftotext (^ anchored) and pdf.js (hasEOL produces \n).
+  // Requires the pattern to start at BOF or after a newline to avoid mid-sentence matches.
+  const CAT_HEADER = /(?:^|\n)([A-Z][A-Za-z &]{2,35}?) +(\d+) +changes/gm;
 
   const categoryMatches = [...pdfText.matchAll(CAT_HEADER)];
-  if (!categoryMatches.length) throw new Error('No category headers found in PDF text. The PDF format may have changed.');
+  if (!categoryMatches.length) {
+    // Fallback: ask Claude to identify categories from first 4000 chars of text
+    onProgress('Detecting categories via AI…');
+    const { clean: structJson } = await claudeCall(
+      apiKey, SYS,
+      [{
+        type: 'text',
+        text: `From the following Change Management Report text, extract ONLY the category names and change counts from the "Change Summary" section.
+Return this exact JSON:
+{"categories": [{ "name": "Category Name", "count": 17 }]}
+
+REPORT TEXT:
+${pdfText.substring(0, 6000)}`
+      }],
+      1000
+    );
+    let fallbackStruct;
+    try { fallbackStruct = JSON.parse(structJson); } catch(e) { throw new Error('Could not parse report structure from PDF. Please check the PDF is a valid Change Management Report.'); }
+    const fallbackCats = fallbackStruct.categories || [];
+    if (!fallbackCats.length) throw new Error('No categories found in PDF. Please check the PDF is a valid Change Management Report.');
+    // For fallback, send full text per category (can't slice without headers)
+    const fullCategoriesFallback = [];
+    for (let i = 0; i < fallbackCats.length; i++) {
+      const cat = fallbackCats[i];
+      onProgress(`Extracting "${cat.name}" (${i+1} of ${fallbackCats.length})…`);
+      if (i > 0) await new Promise(r => setTimeout(r, 2000));
+      const CHUNK = 40000;
+      let allChanges = [];
+      const textToSearch = pdfText.length > CHUNK ? pdfText.substring(0, Math.min(pdfText.length, CHUNK * 3)) : pdfText;
+      const { clean: catJson } = await claudeCall(apiKey, SYS, [{
+        type: 'text',
+        text: `Extract ALL changes for category "${cat.name}" from this Change Management Report text.
+Return JSON: {"name":"${cat.name}","changes":[{"title":"...","type":"...","date":"DD/MM/YYYY","summary":"..."}]}
+TEXT: ${textToSearch}`
+      }], Math.min(16000, cat.count * 120 + 500));
+      try { const d = JSON.parse(catJson); allChanges = d.changes || []; } catch(e) {}
+      fullCategoriesFallback.push({ name: cat.name, count: cat.count, changes: allChanges });
+    }
+    const totalFound2 = fullCategoriesFallback.reduce((s,c)=>s+(c.changes?.length||0),0);
+    return { reportTitle:'Change Management Report', period, generatedDate, totalChanges:totalFound2, categories:fullCategoriesFallback };
+  }
 
   // Build category slices — each slice is the text from this header to the next
   const categorySlices = categoryMatches.map((m, idx) => {
