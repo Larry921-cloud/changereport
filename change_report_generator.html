@@ -6,7 +6,7 @@
 <title>Change Report Generator — rain</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<!-- PDF.js for client-side text extraction (bypasses API 100-page limit) -->
+<!-- PDF.js for client-side text extraction (no page limit) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
   // Configure pdf.js worker
@@ -448,7 +448,7 @@
       <input type="file" id="fileInput" accept=".pdf">
       <div class="drop-icon">📄</div>
       <div class="drop-label">Drop your PDF here</div>
-      <div class="drop-sub">or click to browse &nbsp;·&nbsp; up to 150 pages</div>
+      <div class="drop-sub">or click to browse &nbsp;·&nbsp; up to 150+ pages</div>
     </div>
 
     <!-- File chosen -->
@@ -709,7 +709,7 @@ async function claudeCall(apiKey, system, userContent, maxTokens = 8000, retries
 // Client-side PDF text extraction using pdf.js (no API call, no page limit)
 // ─────────────────────────────────────────────────────────────────────────────
 async function extractTextFromPDF(base64Data, onProgress) {
-  // Try pdf.js first (supports up to 150+ pages, no API page limit)
+  // pdf.js extracts text client-side — no page limit applies
   if (typeof pdfjsLib !== 'undefined') {
     try {
       onProgress('Extracting PDF text locally…');
@@ -752,7 +752,7 @@ async function extractChangesFromPDF(base64Data, apiKey, onProgress) {
   onProgress('Reading PDF text…');
   let pdfText = await extractTextFromPDF(base64Data, onProgress);
 
-  // Fallback: if pdf.js unavailable/failed, use Claude API (100-page limit applies)
+  // Fallback: if pdf.js unavailable/failed, send PDF directly to Claude API
   if (!pdfText) {
     onProgress('Extracting PDF text via API…');
     const { clean } = await claudeCall(
@@ -791,7 +791,7 @@ Return this exact JSON — no changes array, just names and counts:
 }
 
 REPORT TEXT:
-${pdfText.substring(0, 6000)}`
+${pdfText.substring(0, 8000)}`
     }],
     2000
   );
