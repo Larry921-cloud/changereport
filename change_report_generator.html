@@ -612,8 +612,8 @@ dropZone.addEventListener('drop', e => {
 // ─────────────────────────────────────────────────────────────────────────────
 const STEPS = [
   'Reading PDF…',
-  'Extracting text from PDF…',
-  'Extracting changes by category…',
+  'Extracting PDF text…',
+  'Extracting changes per category…',
   'Building slides…',
   'Finalising presentation…'
 ];
@@ -774,91 +774,160 @@ async function extractChangesFromPDF(base64Data, apiKey, onProgress) {
     throw new Error('Could not extract text from PDF. Please ensure the file is a valid Change Management Report.');
   }
 
-  // ── Phase 1: get structure from text (no PDF re-send) ────────────────────
+  // ── Phase 1: parse structure directly from text (no API call needed) ───────
+  // The Change Summary section at the top lists all categories & counts.
   onProgress('Pass 1/2 — reading report structure…');
-  const { clean: structJson } = await claudeCall(
-    apiKey, SYS,
-    [{
-      type: 'text',
-      text: `From the following Change Management Report text, extract ONLY the report metadata and category list.
-Return this exact JSON — no changes array, just names and counts:
-{
-  "reportTitle": "string",
-  "period": "Month Year",
-  "generatedDate": "DD/MM/YYYY",
-  "totalChanges": 200,
-  "categories": [{ "name": "Category Name", "count": 17 }]
-}
 
-REPORT TEXT:
-${pdfText.substring(0, 8000)}`
-    }],
-    2000
-  );
+  // Extract metadata from top of text
+  const dateMatch   = pdfText.match(/Generated[:\s]+([\d\/]+)/);
+  const periodMatch = pdfText.match(/Date From[:\s]+([\d\-]+)/);
+  const generatedDate = dateMatch ? dateMatch[1] : '';
 
-  let structure;
-  try { structure = JSON.parse(structJson); }
-  catch(e) { throw new Error('Could not parse report structure: ' + e.message); }
+  // Parse period from date range (e.g. "2026-03-02" → "March 2026")
+  let period = 'March 2026';
+  if (periodMatch) {
+    const d = new Date(periodMatch[1]);
+    if (!isNaN(d)) period = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+  }
 
-  const categories = structure.categories || [];
-  if (!categories.length) throw new Error('No categories found in report.');
+  // Split text into category sections using "Category Name N changes" header pattern
+  // Match lines like "Billing and Revenue 12 changes" or "IP Core 34 changes"
+  const CAT_HEADER = /^([A-Z][A-Za-z &]+?)\s+(\d+)\s+changes/gm;
 
-  // ── Phase 2: extract changes per category (text only — no PDF, low tokens) 
+  const categoryMatches = [...pdfText.matchAll(CAT_HEADER)];
+  if (!categoryMatches.length) throw new Error('No category headers found in PDF text. The PDF format may have changed.');
+
+  // Build category slices — each slice is the text from this header to the next
+  const categorySlices = categoryMatches.map((m, idx) => {
+    const start = m.index;
+    const end   = idx + 1 < categoryMatches.length ? categoryMatches[idx + 1].index : pdfText.length;
+    return {
+      name:  m[1].trim(),
+      count: parseInt(m[2], 10),
+      text:  pdfText.slice(start, end)
+    };
+  });
+
+  // Filter out the summary section (it appears before the first real category section)
+  // Real category sections have multiple "Type:" entries; the summary header line doesn't
+  const categories = categorySlices.filter(s => (s.text.match(/^Type:/gm) || []).length > 0);
+
+  if (!categories.length) throw new Error('No category content found in PDF text.');
+
+  onProgress(`Found ${categories.length} categories with ${categories.reduce((s,c)=>s+c.count,0)} total changes`);
+  await new Promise(r => setTimeout(r, 500));
+
+  // ── Phase 2: extract changes per category using ONLY that category's text slice
+  //    Each slice is ~3k-20k chars. Large categories (130 changes) get batched.
   const fullCategories = [];
-  // Process one category at a time to stay well under the 30k input token limit
+  const MAX_SLICE_CHARS = 40000; // ~10k tokens, well under 30k/min limit
+
   for (let i = 0; i < categories.length; i++) {
     const cat = categories[i];
     onProgress(`Pass 2/2 — extracting "${cat.name}" (${i + 1} of ${categories.length})…`);
 
-    // Wait 2s between calls to stay well under 30k tokens/min rate limit
     if (i > 0) await new Promise(r => setTimeout(r, 2000));
 
-    const { clean: catJson } = await claudeCall(
-      apiKey, SYS,
-      [{
-        type: 'text',
-        text: `From the following Change Management Report text, extract ALL changes for the category "${cat.name}" ONLY.
+    // For very large categories, batch the text slice
+    const sliceText = cat.text;
+    let allChanges = [];
+
+    if (sliceText.length <= MAX_SLICE_CHARS) {
+      // Normal case — send full slice in one call
+      const { clean: catJson } = await claudeCall(
+        apiKey, SYS,
+        [{
+          type: 'text',
+          text: `Extract ALL changes from the following section of a Change Management Report for category "${cat.name}".
 
 Return this exact JSON:
 {
   "name": "${cat.name}",
-  "count": ${cat.count},
   "changes": [
     {
-      "title": "Change title",
+      "title": "Change title (the line before Type:)",
       "type": "Standard change | Work Order | Emergency change | Retrospective change | CAB change",
-      "date": "DD/MM/YYYY",
+      "date": "DD/MM/YYYY from Start: field",
       "summary": "1-2 sentence plain English summary (~25 words max)."
     }
   ]
 }
 
 Rules:
-- Include EVERY change for this category — do not skip any.
+- A change entry starts with a title line, followed by "Type:", "Start:", "Impact:", "Summary".
+- Include EVERY change — there should be approximately ${cat.count}.
 - Keep summaries concise (~25 words max).
-- Return ONLY valid JSON for this one category.
+- Return ONLY valid JSON.
 
-REPORT TEXT:
-${pdfText}`
-      }],
-      6000
-    );
+CATEGORY TEXT:
+${sliceText}`
+        }],
+        Math.min(16000, cat.count * 120 + 500) // scale max_tokens with change count
+      );
 
-    try {
-      const catData = JSON.parse(catJson);
-      fullCategories.push(catData);
-    } catch(e) {
-      console.warn(`Category "${cat.name}" parse failed, using empty:`, e.message);
-      fullCategories.push({ name: cat.name, count: cat.count, changes: [] });
+      try {
+        const catData = JSON.parse(catJson);
+        allChanges = catData.changes || [];
+      } catch(e) {
+        console.warn(`Category "${cat.name}" parse failed:`, e.message);
+      }
+    } else {
+      // Large category — split into chunks and merge
+      const CHUNK = MAX_SLICE_CHARS;
+      const chunks = [];
+      for (let pos = 0; pos < sliceText.length; pos += CHUNK) chunks.push(sliceText.slice(pos, pos + CHUNK));
+
+      for (let ci = 0; ci < chunks.length; ci++) {
+        if (ci > 0) await new Promise(r => setTimeout(r, 2000));
+        onProgress(`Pass 2/2 — "${cat.name}" batch ${ci+1}/${chunks.length}…`);
+
+        const { clean: chunkJson } = await claudeCall(
+          apiKey, SYS,
+          [{
+            type: 'text',
+            text: `Extract ALL changes from this portion of the Change Management Report for category "${cat.name}".
+
+Return this exact JSON:
+{
+  "changes": [
+    {
+      "title": "Change title",
+      "type": "Standard change | Work Order | Emergency change | Retrospective change | CAB change",
+      "date": "DD/MM/YYYY from Start: field",
+      "summary": "1-2 sentence plain English summary (~25 words max)."
     }
+  ]
+}
+
+Rules:
+- A change starts with a title line, followed by Type:, Start:, Impact:, Summary.
+- Include EVERY complete change in this chunk. Partial entries at the boundary may be skipped.
+- Return ONLY valid JSON.
+
+TEXT CHUNK ${ci+1}/${chunks.length}:
+${chunks[ci]}`
+          }],
+          16000
+        );
+
+        try {
+          const chunkData = JSON.parse(chunkJson);
+          allChanges = allChanges.concat(chunkData.changes || []);
+        } catch(e) {
+          console.warn(`Chunk ${ci+1} for "${cat.name}" parse failed:`, e.message);
+        }
+      }
+    }
+
+    fullCategories.push({ name: cat.name, count: cat.count, changes: allChanges });
   }
 
   // ── Merge ────────────────────────────────────────────────────────────────
   const totalFound = fullCategories.reduce((s, c) => s + (c.changes?.length || 0), 0);
   return {
-    reportTitle:   structure.reportTitle,
-    period:        structure.period,
-    generatedDate: structure.generatedDate,
+    reportTitle:   'Change Management Report',
+    period,
+    generatedDate,
     totalChanges:  totalFound,
     categories:    fullCategories
   };
